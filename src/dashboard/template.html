@@ -101,6 +101,11 @@
         <div class="lvl sell"><div class="lab">SELL</div><div class="val" id="sellV">...</div><div class="dist" id="sellD"></div></div>
       </div>
       <div style="margin-top:10px;font-size:13px" id="mpdLine"></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:12.5px;color:var(--mut)">
+        <label for="feeIn">Prowizja giełdy:</label>
+        <input id="feeIn" type="number" min="0" max="1" step="0.005" style="width:72px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px" onchange="setFee(this.value)">
+        <span>% na stronę (Bybit spot non-VIP: 0.10; z Post-Only masz stawkę maker)</span>
+      </div>
     </div>
 
     <div class="card">
@@ -146,8 +151,9 @@ const CAL = /*__CALIBRATION_JSON__*/null;
 const $ = id => document.getElementById(id);
 const fmt$ = x => "$" + Math.round(x).toLocaleString("pl-PL");
 let state = { horizon: +(localStorage.getItem("gh")||CAL.config.default_horizon), variant: localStorage.getItem("gv")||"balanced",
-              capital: +(localStorage.getItem("gc")||1000) };
+              capital: +(localStorage.getItem("gc")||1000), fee: +(localStorage.getItem("gf")||0.10) };
 function setCap(v){ state.capital=Math.max(20,+v||1000); localStorage.setItem("gc",state.capital); run(); }
+function setFee(v){ state.fee=Math.min(1,Math.max(0,+v||0.10)); localStorage.setItem("gf",state.fee); run(); }
 
 // ---------- data fetch (Bybit -> fallback Binance) ----------
 async function getKlines(interval, limit){
@@ -226,7 +232,9 @@ function decide(k5, k15){
   }
 
   const tab = CAL.excursion_tables[String(state.horizon)][regime] || CAL.excursion_tables[String(state.horizon)]["all"];
-  const mpdAbs = price*cfg.mpd_pct;
+  // MPD = 2x prowizja (edytowalna w UI) + bufory spread/slippage/min-profit z kalibracji
+  const feeBuffers = cfg.mpd_pct - 0.002;   // czesc niezalezna od prowizji (0.0008)
+  const mpdAbs = price*(2*state.fee/100 + feeBuffers);
   const shift = Math.max(-cfg.trend_shift_max, Math.min(cfg.trend_shift_max, cfg.trend_shift_max*trendStr));
   const variants = {};
   for (const [name,tau] of Object.entries(cfg.variants)){
@@ -338,12 +346,13 @@ function render(d, k5, k15){
   const buyPrices = CAL.config.ladder_multipliers.map(m=>d.price-v.dDn*m);
   const btcIfAllBuys = buyPrices.reduce((a,p)=>a+perBuyUsdt/p, 0);
   const avgFill = (state.capital/2)/btcIfAllBuys;
-  const cycleNet = perBuyUsdt*(v.dUp+v.dDn)/d.price - 2*perBuyUsdt*0.001;   // zysk 1 pelnego cyklu poziomu 1 po fee
+  $("feeIn").value = state.fee;
+  const cycleNet = perBuyUsdt*(v.dUp+v.dDn)/d.price - 2*perBuyUsdt*state.fee/100;   // zysk 1 pelnego cyklu poziomu 1 po fee
   let warn = perBuyUsdt<10 ? `<br>⚠️ Zlecenie ${Math.round(perBuyUsdt)} USDT jest bardzo male: zwieksz kapital (min. sensowne ~10 USDT/poziom)` : "";
   $("sizing").innerHTML =
     `Podzial 50/50: <b>${Math.round(state.capital/2)} USDT</b> na 4 poziomy BUY + <b>${fmtBtc(sellBtcTotal)}</b> (~${Math.round(state.capital/2)} USDT) potrzebne na strone SELL.<br>` +
     `Jesli wypelnia sie WSZYSTKIE poziomy BUY: masz <b>${fmtBtc(btcIfAllBuys)}</b> po sredniej <b>${fmt$(avgFill)}</b> (kapital zaangazowany w calosci).<br>` +
-    `Szacowany zysk 1 pelnego cyklu BUY1→SELL1 po fees: <b>~${cycleNet.toFixed(2)} USDT</b> (${(100*(v.dUp+v.dDn)/d.price-0.2).toFixed(2)}% na zaangazowanym zleceniu).` + warn;
+    `Szacowany zysk 1 pelnego cyklu BUY1→SELL1 po fees: <b>~${cycleNet.toFixed(2)} USDT</b> (${(100*(v.dUp+v.dDn)/d.price-2*state.fee).toFixed(2)}% na zaangazowanym zleceniu).` + warn;
 
   const oscTxt = s => s===null?"brak danych": s>=60?"faluje (dobrze)": s>=30?"neutralnie":"jedzie kierunkowo (zle)";
   const oscCls = s => s===null?"b": s>=60?"g": s>=30?"y":"r";
