@@ -99,6 +99,7 @@
 
     <div class="card" style="grid-column:1/-1">
       <h2 id="chartTitle">Cena + poziomy</h2>
+      <div id="chartLegend" style="font-size:11.5px;color:var(--mut);margin-bottom:8px"></div>
       <canvas id="chart"></canvas>
     </div>
 
@@ -308,16 +309,21 @@ function render(d, k5, k15){
      <td>${pill(oscTxt(d.osc[w]), oscCls(d.osc[w]))}</td></tr>`).join("");
 
   // okno wykresu podaza za horyzontem: 1h -> 12h (5m), 4h -> 48h (15m), 24h -> 7 dni (15m)
-  const CH = {1:{src:k5, n:144, label:"12h", fmt:"time"},
-              4:{src:k15, n:192, label:"48h", fmt:"time"},
-              24:{src:k15, n:672, label:"7 dni", fmt:"date"}}[state.horizon];
+  const CH = {1:{src:k5, n:144, label:"12h", fmt:"time", band:"hour"},
+              4:{src:k15, n:192, label:"48h", fmt:"time", band:"6h"},
+              24:{src:k15, n:672, label:"7 dni", fmt:"date", band:"day"}}[state.horizon];
   $("chartTitle").textContent = `Cena ${CH.label} + poziomy (horyzont ${state.horizon}h)`;
-  drawChart(CH.src.slice(-CH.n), d, v, CH.fmt);
+  const sw = c => `<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${c};vertical-align:-1px;margin-right:3px"></span>`;
+  $("chartLegend").innerHTML = CH.band==="day"
+    ? sw("rgba(245,158,11,0.5)")+"weekend &nbsp; "+sw("rgba(37,99,235,0.25)")+"dzien roboczy (naprzemiennie)"
+    : sw("rgba(99,102,241,0.55)")+"noc 00-06 &nbsp; "+sw("rgba(245,158,11,0.55)")+"rano 06-12 &nbsp; "
+      +sw("rgba(16,185,129,0.5)")+"popoludnie 12-18 &nbsp; "+sw("rgba(168,85,247,0.5)")+"wieczor 18-24";
+  drawChart(CH.src.slice(-CH.n), d, v, CH.fmt, CH.band);
   $("meta").innerHTML = `cena z ${new Date().toLocaleTimeString("pl-PL")}<br>venue: Bybit spot`;
   $("calDate").textContent = CAL.generated_utc.slice(0,16).replace("T"," ")+" UTC";
 }
 
-function drawChart(k, d, v, fmt){
+function drawChart(k, d, v, fmt, band){
   const cv=$("chart"), ctx=cv.getContext("2d");
   const W=cv.width=cv.clientWidth*devicePixelRatio, H=cv.height=210*devicePixelRatio;
   ctx.scale(1,1); ctx.clearRect(0,0,W,H);
@@ -325,23 +331,49 @@ function drawChart(k, d, v, fmt){
   const lo=Math.min(...prices, v.buy)*0.9995, hi=Math.max(...prices, v.sell)*1.0005;
   const X=i=>i/(k.length-1)*(W-70*devicePixelRatio)+10, Y=p=>H-padB-(p-lo)/(hi-lo)*(H-padB-14);
 
-  // podzial na dni: naprzemienne tlo + separator o polnocy + etykieta dnia
-  const dayIdx=[0];
-  for(let i=1;i<k.length;i++)
-    if(new Date(k[i].t).getDate()!==new Date(k[i-1].t).getDate()) dayIdx.push(i);
-  dayIdx.push(k.length-1);
+  // kolorystyczny podzial czasu, granulacja zalezna od okna:
+  //   12h -> pasma godzinowe, 48h -> pasma 6h, 7 dni -> pasma dobowe
+  // + zawsze: mocniejszy separator o polnocy z etykieta dnia
+  const gran = band==="hour" ? 1 : band==="6h" ? 6 : 24;
+  const keyOf = t => { const dt=new Date(t);
+    return `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}` + (gran<24 ? "-"+Math.floor(dt.getHours()/gran) : ""); };
+  const segIdx=[0];
+  for(let i=1;i<k.length;i++) if(keyOf(k[i].t)!==keyOf(k[i-1].t)) segIdx.push(i);
+  segIdx.push(k.length-1);
   const plotW=W-64*devicePixelRatio;
-  for(let s=0;s<dayIdx.length-1;s++){
-    const x0=Math.min(X(dayIdx[s]),plotW), x1=Math.min(X(dayIdx[s+1]),plotW);
-    if(s%2===0){ ctx.fillStyle="rgba(37,99,235,0.045)"; ctx.fillRect(x0,10,x1-x0,H-padB-10); }
-    if(s>0){ ctx.strokeStyle="rgba(107,122,144,0.35)"; ctx.setLineDash([2,4]); ctx.beginPath();
-      ctx.moveTo(x0,10); ctx.lineTo(x0,H-padB); ctx.stroke(); ctx.setLineDash([]); }
-    if(x1-x0>52*devicePixelRatio){
-      ctx.fillStyle="rgba(107,122,144,0.75)"; ctx.font=`${10*devicePixelRatio}px Segoe UI`; ctx.textAlign="center";
-      const dd=new Date(k[dayIdx[s]===0?0:dayIdx[s]].t);
-      ctx.fillText(dd.toLocaleDateString("pl-PL",{weekday:"short",day:"2-digit",month:"2-digit"}),(x0+x1)/2,22*devicePixelRatio);
-      ctx.textAlign="left";
+  // paleta: pory dnia (noc/rano/popoludnie/wieczor) lub weekend vs dzien roboczy
+  const PERIOD_COLORS=["rgba(99,102,241,0.11)","rgba(245,158,11,0.10)","rgba(16,185,129,0.09)","rgba(168,85,247,0.09)"];
+  const fillOf = (t,s)=>{ const dt=new Date(t);
+    if(gran<24) return PERIOD_COLORS[Math.floor(dt.getHours()/6)];
+    const wd=dt.getDay();
+    return (wd===0||wd===6) ? "rgba(245,158,11,0.12)" : (s%2===0 ? "rgba(37,99,235,0.05)" : null); };
+  for(let s=0;s<segIdx.length-1;s++){
+    const i0=segIdx[s], x0=Math.min(X(i0),plotW), x1=Math.min(X(segIdx[s+1]),plotW);
+    const fc=fillOf(k[i0].t,s);
+    if(fc){ ctx.fillStyle=fc; ctx.fillRect(x0,10,x1-x0,H-padB-10); }
+    const dNew = s>0 && new Date(k[i0].t).getDate()!==new Date(k[segIdx[s-1]].t).getDate();
+    if(s>0){
+      ctx.strokeStyle = dNew ? "rgba(107,122,144,0.55)" : "rgba(107,122,144,0.18)";
+      ctx.setLineDash(dNew?[4,3]:[2,5]); ctx.beginPath();
+      ctx.moveTo(x0,10); ctx.lineTo(x0,H-padB); ctx.stroke(); ctx.setLineDash([]);
     }
+    // etykieta godziny poczatku pasma (dla granulacji < doby) lub dnia (dla dobowej)
+    if(x1-x0>34*devicePixelRatio){
+      ctx.fillStyle="rgba(107,122,144,0.7)"; ctx.font=`${9.5*devicePixelRatio}px Segoe UI`; ctx.textAlign="center";
+      const dt=new Date(k[i0].t);
+      const lab = gran<24 ? String((Math.floor(dt.getHours()/gran)*gran)).padStart(2,"0")+":00"
+                          : dt.toLocaleDateString("pl-PL",{weekday:"short",day:"2-digit",month:"2-digit"});
+      ctx.fillText(lab,(x0+x1)/2,21*devicePixelRatio); ctx.textAlign="left";
+    }
+  }
+  // etykieta dnia nad pasmami godzinowymi (na kazdej zmianie doby)
+  if(gran<24){
+    ctx.fillStyle="rgba(37,99,235,0.85)"; ctx.font=`bold ${10*devicePixelRatio}px Segoe UI`;
+    let last=null;
+    for(let i=0;i<k.length;i++){ const dt=new Date(k[i].t);
+      if(dt.getDate()!==last){ last=dt.getDate();
+        ctx.fillText(dt.toLocaleDateString("pl-PL",{weekday:"short",day:"2-digit",month:"2-digit"}),
+                     Math.min(X(i),plotW)+4*devicePixelRatio, 34*devicePixelRatio); } }
   }
 
   const line=(p,color,label)=>{ ctx.strokeStyle=color; ctx.setLineDash([6,5]); ctx.beginPath();
