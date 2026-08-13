@@ -86,9 +86,15 @@
     </div>
 
     <div class="card">
-      <h2>Drabinka (poziomy 1-4)</h2>
-      <table><thead><tr><th>#</th><th class="r">BUY</th><th class="r">SELL</th></tr></thead>
+      <h2>Drabinka + wielkość pozycji</h2>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px">
+        <label for="capital">Kapitał na grid:</label>
+        <input id="capital" type="number" min="20" step="100" style="width:110px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:14px" onchange="setCap(this.value)">
+        <span>USDT</span>
+      </div>
+      <table><thead><tr><th>#</th><th class="r">BUY</th><th class="r">Zlecenie</th><th class="r">SELL</th><th class="r">Zlecenie</th></tr></thead>
       <tbody id="ladder"></tbody></table>
+      <div style="margin-top:10px;font-size:12.5px;color:var(--mut);line-height:1.5" id="sizing"></div>
     </div>
 
     <div class="card" style="grid-column:1/-1">
@@ -115,7 +121,9 @@ const CAL = /*__CALIBRATION_JSON__*/null;
 
 const $ = id => document.getElementById(id);
 const fmt$ = x => "$" + Math.round(x).toLocaleString("pl-PL");
-let state = { horizon: +(localStorage.getItem("gh")||CAL.config.default_horizon), variant: localStorage.getItem("gv")||"balanced" };
+let state = { horizon: +(localStorage.getItem("gh")||CAL.config.default_horizon), variant: localStorage.getItem("gv")||"balanced",
+              capital: +(localStorage.getItem("gc")||1000) };
+function setCap(v){ state.capital=Math.max(20,+v||1000); localStorage.setItem("gc",state.capital); run(); }
 
 // ---------- data fetch (Bybit -> fallback Binance) ----------
 async function getKlines(interval, limit){
@@ -266,9 +274,32 @@ function render(d, k15){
   }
   $("why").innerHTML = why.map(x=>`<li>${x}</li>`).join("");
 
-  $("ladder").innerHTML = CAL.config.ladder_multipliers.map((m,i)=>
-    `<tr><td>${i+1} (x${m})</td><td class="r" style="color:var(--green)">${fmt$(d.price-v.dDn*m)}</td>
-     <td class="r" style="color:var(--red)">${fmt$(d.price+v.dUp*m)}</td></tr>`).join("");
+  // sizing: 50/50 kapitalu na strony, rowne poziomy (V1)
+  $("capital").value = state.capital;
+  const nLvl = CAL.config.ladder_multipliers.length;
+  const perBuyUsdt = state.capital/2/nLvl;
+  const sellBtcTotal = state.capital/2/d.price;          // BTC potrzebny do strony SELL
+  const perSellBtc = sellBtcTotal/nLvl;
+  const fmtBtc = x => x.toFixed(5)+" BTC";
+
+  $("ladder").innerHTML = CAL.config.ladder_multipliers.map((m,i)=>{
+    const bp=d.price-v.dDn*m, sp=d.price+v.dUp*m;
+    return `<tr><td>${i+1} (x${m})</td>
+     <td class="r" style="color:var(--green)">${fmt$(bp)}</td>
+     <td class="r">${Math.round(perBuyUsdt)} USDT<br><span style="color:var(--mut);font-size:11px">${fmtBtc(perBuyUsdt/bp)}</span></td>
+     <td class="r" style="color:var(--red)">${fmt$(sp)}</td>
+     <td class="r">${fmtBtc(perSellBtc)}<br><span style="color:var(--mut);font-size:11px">~${Math.round(perSellBtc*sp)} USDT</span></td></tr>`;
+  }).join("");
+
+  const buyPrices = CAL.config.ladder_multipliers.map(m=>d.price-v.dDn*m);
+  const btcIfAllBuys = buyPrices.reduce((a,p)=>a+perBuyUsdt/p, 0);
+  const avgFill = (state.capital/2)/btcIfAllBuys;
+  const cycleNet = perBuyUsdt*(v.dUp+v.dDn)/d.price - 2*perBuyUsdt*0.001;   // zysk 1 pelnego cyklu poziomu 1 po fee
+  let warn = perBuyUsdt<10 ? `<br>⚠️ Zlecenie ${Math.round(perBuyUsdt)} USDT jest bardzo male: zwieksz kapital (min. sensowne ~10 USDT/poziom)` : "";
+  $("sizing").innerHTML =
+    `Podzial 50/50: <b>${Math.round(state.capital/2)} USDT</b> na 4 poziomy BUY + <b>${fmtBtc(sellBtcTotal)}</b> (~${Math.round(state.capital/2)} USDT) potrzebne na strone SELL.<br>` +
+    `Jesli wypelnia sie WSZYSTKIE poziomy BUY: masz <b>${fmtBtc(btcIfAllBuys)}</b> po sredniej <b>${fmt$(avgFill)}</b> (kapital zaangazowany w calosci).<br>` +
+    `Szacowany zysk 1 pelnego cyklu BUY1→SELL1 po fees: <b>~${cycleNet.toFixed(2)} USDT</b> (${(100*(v.dUp+v.dDn)/d.price-0.2).toFixed(2)}% na zaangazowanym zleceniu).` + warn;
 
   const oscTxt = s => s===null?"brak danych": s>=60?"faluje (dobrze)": s>=30?"neutralnie":"jedzie kierunkowo (zle)";
   const oscCls = s => s===null?"b": s>=60?"g": s>=30?"y":"r";

@@ -8,7 +8,7 @@
 
 Decision-support system dla grid tradingu BTC (spot, Bybit). Odpowiada na pytanie: "Jeśli chcę uruchomić grid TERAZ, gdzie najbliższy BUY, gdzie SELL, jak szeroki grid i czy w ogóle warto?". System NIE składa zleceń, tylko rekomenduje.
 
-**Status: Phase 1 zakończona (2026-08-13), werdykt GO** (raport: `raport-phase1.md`). Dokument wiążący: `plan-v2.md`. `plan-v1.md` = archiwum researchu. Dane 24 mies. 1m (Binance + Bybit) pobrane, kalibracja percentyli potwierdzona walk-forwardowo (odchylenia <2 pp). Następne: Phase 3 silniki + Phase 4 backtest + Phase 5 dashboard.
+**Status: dashboard V1 LIVE (2026-08-13):** https://vente-europe.github.io/btc-grid-engine/ (repo `vente-europe/btc-grid-engine`, lokalny branch `master`, push `master:main`). Phase 1 walidacja: GO (`raport-phase1.md`, kalibracja walk-forward <2 pp). Logika decyzyjna w JS w `src/dashboard/template.html` (live fetch Bybit, fallback Binance; CORS potwierdzony na obu). Kalibracja dzienna: Task Scheduler "BTC Grid Calibrate" 06:30 → `calibrate-daily.bat` → `src/calibrate.py` + `src/push_pages.py` (token z workspace-root `.env`). Eventy FOMC/CPI: `config/events.json` (Fed + BLS, zweryfikowane 2026-08-13). **Następne: Phase 4 backtest wariantów A-E + samoocena (log rekomendacji).**
 
 **Ważne techniczne:** `python` w PATH wskazuje na venv Hermesa BEZ pip; zawsze używać pełnej ścieżki `C:/Users/tommi/AppData/Local/Programs/Python/Python311/python.exe`. Oscillation Score = percentyl efficiency ratio vs 90 dni (surowa formuła net/path nie działa, patrz raport).
 
