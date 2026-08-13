@@ -115,10 +115,20 @@
 
     <div class="card">
       <h2>Drabinka + wielkość pozycji</h2>
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;font-size:13px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;font-size:13px;flex-wrap:wrap">
         <label for="capital">Kapitał na grid:</label>
         <input id="capital" type="number" min="20" step="100" style="width:110px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:14px" onchange="setCap(this.value)">
         <span>USDT</span>
+        <span style="flex:1"></span>
+        <div class="toggle" style="margin:0" id="modeT"></div>
+      </div>
+      <div id="fixedCtrls" style="display:none;align-items:center;gap:8px;margin-bottom:10px;font-size:13px;flex-wrap:wrap">
+        <span>Krok:</span>
+        <div class="toggle" style="margin:0" id="stepT"></div>
+        <input id="stepIn" type="number" min="10" step="10" style="width:80px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px" onchange="setStep(this.value)">
+        <span>$</span>
+        <span style="margin-left:10px">Poziomów/stronę:</span>
+        <input id="lvlIn" type="number" min="2" max="100" style="width:64px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px" onchange="setLvls(this.value)">
       </div>
       <table><thead><tr><th>#</th><th class="r">BUY</th><th class="r">Zlecenie</th><th class="r">SELL</th><th class="r">Zlecenie</th></tr></thead>
       <tbody id="ladder"></tbody></table>
@@ -152,8 +162,14 @@ const $ = id => document.getElementById(id);
 const fmt$ = x => "$" + Math.round(x).toLocaleString("pl-PL");
 let state = { horizon: +(localStorage.getItem("gh")||CAL.config.default_horizon), variant: localStorage.getItem("gv")||"balanced",
               capital: +(localStorage.getItem("gc")||1000), fee: +(localStorage.getItem("gf")||0.10) };
+state.mode = localStorage.getItem("gm")||"adaptive";
+state.step = +(localStorage.getItem("gs")||100);
+state.levels = +(localStorage.getItem("gl")||30);
 function setCap(v){ state.capital=Math.max(20,+v||1000); localStorage.setItem("gc",state.capital); run(); }
 function setFee(v){ state.fee=Math.min(1,Math.max(0,+v||0.10)); localStorage.setItem("gf",state.fee); run(); }
+function setMode(m){ state.mode=m; localStorage.setItem("gm",m); run(); }
+function setStep(v){ state.step=Math.max(10,+v||100); localStorage.setItem("gs",state.step); run(); }
+function setLvls(v){ state.levels=Math.min(100,Math.max(2,+v||30)); localStorage.setItem("gl",state.levels); run(); }
 
 // ---------- data fetch (Bybit -> fallback Binance) ----------
 async function getKlines(interval, limit){
@@ -326,33 +342,73 @@ function render(d, k5, k15){
   }
   $("why").innerHTML = why.map(x=>`<li>${x}</li>`).join("");
 
-  // sizing: 50/50 kapitalu na strony, rowne poziomy (V1)
+  // --- drabinka: dwa tryby (adaptacyjna 4 poziomy / stala co $X, N poziomow) ---
   $("capital").value = state.capital;
-  const nLvl = CAL.config.ladder_multipliers.length;
-  const perBuyUsdt = state.capital/2/nLvl;
-  const sellBtcTotal = state.capital/2/d.price;          // BTC potrzebny do strony SELL
-  const perSellBtc = sellBtcTotal/nLvl;
-  const fmtBtc = x => x.toFixed(5)+" BTC";
-
-  $("ladder").innerHTML = CAL.config.ladder_multipliers.map((m,i)=>{
-    const bp=d.price-v.dDn*m, sp=d.price+v.dUp*m;
-    return `<tr><td>${i+1} (x${m})</td>
-     <td class="r" style="color:var(--green)">${fmt$(bp)}</td>
-     <td class="r">${Math.round(perBuyUsdt)} USDT<br><span style="color:var(--mut);font-size:11px">${fmtBtc(perBuyUsdt/bp)}</span></td>
-     <td class="r" style="color:var(--red)">${fmt$(sp)}</td>
-     <td class="r">${fmtBtc(perSellBtc)}<br><span style="color:var(--mut);font-size:11px">~${Math.round(perSellBtc*sp)} USDT</span></td></tr>`;
-  }).join("");
-
-  const buyPrices = CAL.config.ladder_multipliers.map(m=>d.price-v.dDn*m);
-  const btcIfAllBuys = buyPrices.reduce((a,p)=>a+perBuyUsdt/p, 0);
-  const avgFill = (state.capital/2)/btcIfAllBuys;
   $("feeIn").value = state.fee;
-  const cycleNet = perBuyUsdt*(v.dUp+v.dDn)/d.price - 2*perBuyUsdt*state.fee/100;   // zysk 1 pelnego cyklu poziomu 1 po fee
-  let warn = perBuyUsdt<10 ? `<br>⚠️ Zlecenie ${Math.round(perBuyUsdt)} USDT jest bardzo male: zwieksz kapital (min. sensowne ~10 USDT/poziom)` : "";
-  $("sizing").innerHTML =
-    `Podzial 50/50: <b>${Math.round(state.capital/2)} USDT</b> na 4 poziomy BUY + <b>${fmtBtc(sellBtcTotal)}</b> (~${Math.round(state.capital/2)} USDT) potrzebne na strone SELL.<br>` +
-    `Jesli wypelnia sie WSZYSTKIE poziomy BUY: masz <b>${fmtBtc(btcIfAllBuys)}</b> po sredniej <b>${fmt$(avgFill)}</b> (kapital zaangazowany w calosci).<br>` +
-    `Szacowany zysk 1 pelnego cyklu BUY1→SELL1 po fees: <b>~${cycleNet.toFixed(2)} USDT</b> (${(100*(v.dUp+v.dDn)/d.price-2*state.fee).toFixed(2)}% na zaangazowanym zleceniu).` + warn;
+  $("modeT").innerHTML =
+    `<button class="${state.mode==='adaptive'?'on':''}" onclick="setMode('adaptive')">Adaptacyjna</button>`+
+    `<button class="${state.mode==='fixed'?'on':''}" onclick="setMode('fixed')">Stała co $</button>`;
+  $("fixedCtrls").style.display = state.mode==="fixed" ? "flex" : "none";
+  const fmtBtc = x => x.toFixed(5)+" BTC";
+  let warn = "";
+
+  if (state.mode==="fixed"){
+    $("stepT").innerHTML=[50,100,200].map(s=>
+      `<button class="${s===state.step?'on':''}" onclick="setStep(${s})">$${s}</button>`).join("");
+    $("stepIn").value=state.step; $("lvlIn").value=state.levels;
+
+    const n=state.levels, step=state.step;
+    const perUsdt=state.capital/2/n, sellBtcTotal=state.capital/2/d.price, perSellBtc=sellBtcTotal/n;
+    const rows=[];
+    const SHOW=Math.min(5,n);
+    for(let i=1;i<=SHOW;i++){
+      const bp=d.price-i*step, sp=d.price+i*step;
+      rows.push(`<tr><td>${i}</td>
+       <td class="r" style="color:var(--green)">${fmt$(bp)}</td>
+       <td class="r">${perUsdt.toFixed(1)} USDT<br><span style="color:var(--mut);font-size:11px">${fmtBtc(perUsdt/bp)}</span></td>
+       <td class="r" style="color:var(--red)">${fmt$(sp)}</td>
+       <td class="r">${fmtBtc(perSellBtc)}<br><span style="color:var(--mut);font-size:11px">~${(perSellBtc*sp).toFixed(1)} USDT</span></td></tr>`);
+    }
+    if(n>SHOW) rows.push(`<tr><td colspan="5" style="text-align:center;color:var(--mut)">... i ${n-SHOW} kolejnych poziomow, az do ${fmt$(d.price-n*step)} / ${fmt$(d.price+n*step)}</td></tr>`);
+    $("ladder").innerHTML=rows.join("");
+
+    let btcAll=0; for(let i=1;i<=n;i++) btcAll+=perUsdt/(d.price-i*step);
+    const avgFill=(state.capital/2)/btcAll;
+    const cycleNetU=perUsdt*step/d.price - 2*perUsdt*state.fee/100;
+    const cycleNetPct=100*step/d.price - 2*state.fee;
+    const beStep=d.mpdAbs;   // prog: krok >= MPD zeby cykl mial sens
+    const okStep=step>=CAL.config.mpd_multiple_min*beStep;
+    if(perUsdt<10) warn+=`<br>⚠️ Zlecenie ${perUsdt.toFixed(1)} USDT/poziom jest bardzo male: zmniejsz liczbe poziomow albo zwieksz kapital`;
+    $("sizing").innerHTML =
+      (okStep ? `✅ Krok <b>$${step}</b> powyzej progu oplacalnosci (${fmt$(beStep)}): kazdy cykl netto <b>+${cycleNetU.toFixed(2)} USDT</b> (${cycleNetPct.toFixed(2)}%).`
+              : `⛔ <b>Krok $${step} jest PONIZEJ progu oplacalnosci ${fmt$(beStep)}</b> przy prowizji ${state.fee}%/strone: kazdy cykl daje ${cycleNetU>=0?"+":""}${cycleNetU.toFixed(2)} USDT (${cycleNetPct.toFixed(2)}%). Zwieksz krok albo obniz prowizje.`) +
+      `<br>Zakres grida: <b>${fmt$(d.price-n*step)} do ${fmt$(d.price+n*step)}</b> (${n} poziomow/strone).` +
+      ` Dla porownania: system rekomenduje spread ~${fmt$(v.dDn)} (${varPL[state.variant]}, horyzont ${state.horizon}h).` +
+      `<br>Podzial 50/50: <b>${Math.round(state.capital/2)} USDT</b> na ${n} poziomow BUY (po ${perUsdt.toFixed(1)}) + <b>${fmtBtc(sellBtcTotal)}</b> na strone SELL.` +
+      `<br>Jesli wypelnia sie WSZYSTKIE BUY: masz <b>${fmtBtc(btcAll)}</b> po sredniej <b>${fmt$(avgFill)}</b>.` + warn;
+  } else {
+    const nLvl = CAL.config.ladder_multipliers.length;
+    const perBuyUsdt = state.capital/2/nLvl;
+    const sellBtcTotal = state.capital/2/d.price;
+    const perSellBtc = sellBtcTotal/nLvl;
+    $("ladder").innerHTML = CAL.config.ladder_multipliers.map((m,i)=>{
+      const bp=d.price-v.dDn*m, sp=d.price+v.dUp*m;
+      return `<tr><td>${i+1} (x${m})</td>
+       <td class="r" style="color:var(--green)">${fmt$(bp)}</td>
+       <td class="r">${Math.round(perBuyUsdt)} USDT<br><span style="color:var(--mut);font-size:11px">${fmtBtc(perBuyUsdt/bp)}</span></td>
+       <td class="r" style="color:var(--red)">${fmt$(sp)}</td>
+       <td class="r">${fmtBtc(perSellBtc)}<br><span style="color:var(--mut);font-size:11px">~${Math.round(perSellBtc*sp)} USDT</span></td></tr>`;
+    }).join("");
+    const buyPrices = CAL.config.ladder_multipliers.map(m=>d.price-v.dDn*m);
+    const btcIfAllBuys = buyPrices.reduce((a,p)=>a+perBuyUsdt/p, 0);
+    const avgFill = (state.capital/2)/btcIfAllBuys;
+    const cycleNet = perBuyUsdt*(v.dUp+v.dDn)/d.price - 2*perBuyUsdt*state.fee/100;
+    if(perBuyUsdt<10) warn=`<br>⚠️ Zlecenie ${Math.round(perBuyUsdt)} USDT jest bardzo male: zwieksz kapital (min. sensowne ~10 USDT/poziom)`;
+    $("sizing").innerHTML =
+      `Podzial 50/50: <b>${Math.round(state.capital/2)} USDT</b> na 4 poziomy BUY + <b>${fmtBtc(sellBtcTotal)}</b> (~${Math.round(state.capital/2)} USDT) potrzebne na strone SELL.<br>` +
+      `Jesli wypelnia sie WSZYSTKIE poziomy BUY: masz <b>${fmtBtc(btcIfAllBuys)}</b> po sredniej <b>${fmt$(avgFill)}</b> (kapital zaangazowany w calosci).<br>` +
+      `Szacowany zysk 1 pelnego cyklu BUY1→SELL1 po fees: <b>~${cycleNet.toFixed(2)} USDT</b> (${(100*(v.dUp+v.dDn)/d.price-2*state.fee).toFixed(2)}% na zaangazowanym zleceniu).` + warn;
+  }
 
   const oscTxt = s => s===null?"brak danych": s>=60?"faluje (dobrze)": s>=30?"neutralnie":"jedzie kierunkowo (zle)";
   const oscCls = s => s===null?"b": s>=60?"g": s>=30?"y":"r";
