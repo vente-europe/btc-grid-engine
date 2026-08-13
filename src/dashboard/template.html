@@ -324,6 +324,26 @@ function drawChart(k, d, v, fmt){
   const prices=k.map(x=>x.c), padB=26*devicePixelRatio;
   const lo=Math.min(...prices, v.buy)*0.9995, hi=Math.max(...prices, v.sell)*1.0005;
   const X=i=>i/(k.length-1)*(W-70*devicePixelRatio)+10, Y=p=>H-padB-(p-lo)/(hi-lo)*(H-padB-14);
+
+  // podzial na dni: naprzemienne tlo + separator o polnocy + etykieta dnia
+  const dayIdx=[0];
+  for(let i=1;i<k.length;i++)
+    if(new Date(k[i].t).getDate()!==new Date(k[i-1].t).getDate()) dayIdx.push(i);
+  dayIdx.push(k.length-1);
+  const plotW=W-64*devicePixelRatio;
+  for(let s=0;s<dayIdx.length-1;s++){
+    const x0=Math.min(X(dayIdx[s]),plotW), x1=Math.min(X(dayIdx[s+1]),plotW);
+    if(s%2===0){ ctx.fillStyle="rgba(37,99,235,0.045)"; ctx.fillRect(x0,10,x1-x0,H-padB-10); }
+    if(s>0){ ctx.strokeStyle="rgba(107,122,144,0.35)"; ctx.setLineDash([2,4]); ctx.beginPath();
+      ctx.moveTo(x0,10); ctx.lineTo(x0,H-padB); ctx.stroke(); ctx.setLineDash([]); }
+    if(x1-x0>52*devicePixelRatio){
+      ctx.fillStyle="rgba(107,122,144,0.75)"; ctx.font=`${10*devicePixelRatio}px Segoe UI`; ctx.textAlign="center";
+      const dd=new Date(k[dayIdx[s]===0?0:dayIdx[s]].t);
+      ctx.fillText(dd.toLocaleDateString("pl-PL",{weekday:"short",day:"2-digit",month:"2-digit"}),(x0+x1)/2,22*devicePixelRatio);
+      ctx.textAlign="left";
+    }
+  }
+
   const line=(p,color,label)=>{ ctx.strokeStyle=color; ctx.setLineDash([6,5]); ctx.beginPath();
     ctx.moveTo(0,Y(p)); ctx.lineTo(W-64*devicePixelRatio,Y(p)); ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle=color; ctx.font=`${11*devicePixelRatio}px Segoe UI`;
