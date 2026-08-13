@@ -43,6 +43,12 @@
   .foot { margin-top:14px; font-size:11.5px; color:var(--mut); line-height:1.5; }
   .err { background:#fce8e6; color:var(--red); padding:12px; border-radius:10px; margin-bottom:14px; display:none; }
   .refresh { border:none; background:var(--blue); color:#fff; padding:8px 18px; border-radius:8px; cursor:pointer; font-size:14px; }
+  .qi { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%;
+        background:var(--line); color:var(--mut); font-size:11px; font-weight:700; cursor:pointer; margin-left:4px; }
+  .qi:hover { background:var(--blue); color:#fff; }
+  .help-pop { display:none; margin-top:12px; background:#f8f9fc; border:1px solid var(--line); border-radius:10px;
+              padding:12px 14px; font-size:12px; line-height:1.6; }
+  .help-pop.show { display:block; }
 </style>
 </head>
 <body>
@@ -62,12 +68,29 @@
   <div class="grid">
     <div class="card">
       <h2>BTC teraz</h2>
-      <div class="big" id="price">...</div>
-      <div style="margin-top:10px"><span id="action" class="action">...</span></div>
-      <div style="margin-top:12px;font-size:13px;color:var(--mut)">Confidence</div>
-      <div style="font-weight:700;font-size:18px"><span id="confv">...</span>/100</div>
+      <div style="display:flex;gap:14px;align-items:stretch">
+        <div style="flex:0 0 auto;min-width:150px">
+          <div class="big" id="price">...</div>
+          <div style="margin-top:10px"><span id="action" class="action">...</span></div>
+          <div style="margin-top:12px;font-size:13px;color:var(--mut)">Confidence
+            <span class="qi" onclick="document.getElementById('confHelp').classList.toggle('show')">?</span>
+          </div>
+          <div style="font-weight:700;font-size:18px"><span id="confv">...</span>/100</div>
+        </div>
+        <div id="reasonBox" style="flex:1;background:#f8f9fc;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12.5px;line-height:1.55;color:var(--ink)"></div>
+      </div>
       <div class="conf-bar"><div class="conf-fill" id="confbar" style="width:0%"></div></div>
       <div style="margin-top:12px" id="regimePills"></div>
+      <div id="confHelp" class="help-pop">
+        <b>Jak liczy sie Confidence (0-100)</b><br>
+        Deterministyczna punktacja jakosci setupu, nie prognoza zysku. Start: <b>50 pkt</b>.<br><br>
+        <b>Plusy:</b> +20 zero blokad i ostrzezen + rezim spokojny/normalny · +10 shock ratio 0.7-1.3 ·
+        +10 spread ≥ 2x prog oplacalnosci · +10 oscylacja 24h &gt; 60<br>
+        <b>Minusy:</b> -20 rezim podwyzszony · -15 trend obecny (|z| &gt; 0.75) · -10 oscylacja 3d &lt; 40<br><br>
+        Blokada NO TRADE scina wynik do max 25. Sufit: 95, nigdy 100.<br><br>
+        <b>Progi:</b> 0-40 nie graj · 40-55 czekaj · 55-70 setup slaby · 70-85 akceptowalny · 85+ mocny.<br><br>
+        <span style="color:var(--mut)">Wagi to na razie wartosci inzynierskie; kalibracja danymi nastapi po fazie backtestu i logu samooceny.</span>
+      </div>
     </div>
 
     <div class="card">
@@ -264,6 +287,26 @@ function render(d, k5, k15){
   $("mpdLine").innerHTML = v.ok
     ? `✅ Spread powyzej ${CAL.config.mpd_multiple_min}x progu oplacalnosci (${fmt$(d.mpdAbs)})`
     : `⛔ Spread ponizej ${CAL.config.mpd_multiple_min}x progu oplacalnosci (${fmt$(d.mpdAbs)}): fees zjedza zysk`;
+
+  // okienko-wyjasnienie przy cenie: krotki opis dla WYBRANEGO wariantu i horyzontu
+  const regPL2={quiet:"spokojny",normal:"normalny",elevated:"podwyzszony",extreme:"ekstremalny"};
+  const varPL={aggressive:"Aggressive",balanced:"Balanced",conservative:"Conservative"};
+  let reason;
+  if (d.action==="NO TRADE"){
+    reason = `<b>Nie graj teraz.</b> ${d.blocks[0]}.` +
+      (d.blocks.length>1 ? ` Dodatkowo: ${d.blocks.slice(1).join("; ").toLowerCase()}.` : "") +
+      ` Wroc, gdy warunki zejda ponizej progow (panel "Dlaczego" nizej).`;
+  } else if (d.action==="WAIT"){
+    reason = `<b>Poczekaj.</b> ${d.waits[0]}.` +
+      ` Rezim ${regPL2[d.regime]} sam w sobie nie blokuje, ale start teraz oznacza gorsze warunki wejscia.`;
+  } else {
+    reason = `<b>Warunki sprzyjaja.</b> W rezimie ${regPL2[d.regime]} typowy ruch ${state.horizon}h wspiera spread ` +
+      `${fmt$(v.dDn)} / ${fmt$(v.dUp)} (wariant ${varPL[state.variant]}, ~${state.variant==="aggressive"?"50":state.variant==="balanced"?"40":"30"}% szans dotkniecia poziomu). ` +
+      (v.ok ? `Spread pokrywa prowizje z zapasem.` : `Uwaga: ten wariant NIE pokrywa prowizji, przelacz na Conservative.`) +
+      (d.shift!==0 ? ` Trend przesuwa poziomy o ${(Math.abs(d.shift)*100).toFixed(0)}% (${d.shift>0?"SELL dalej, BUY blizej":"BUY dalej, SELL blizej"}).` : "") +
+      (d.osc[24]>60 ? ` Rynek wyraznie faluje (oscylacja ${Math.round(d.osc[24])}).` : "");
+  }
+  $("reasonBox").innerHTML = reason;
 
   const why=[];
   d.blocks.forEach(b=>why.push("⛔ "+b));
