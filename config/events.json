@@ -1,0 +1,20 @@
+{
+  "_comment": "Eventy makro: WAIT od window_before_hours przed do window_after_hours po. Czasy UTC. FOMC = komunikat 14:00 ET drugiego dnia; CPI = 8:30 ET. Zrodla: federalreserve.gov/monetarypolicy/fomccalendars.htm, bls.gov/schedule (via Perplexity 2026-08-13).",
+  "events": [
+    {"name": "CPI", "utc": "2026-09-11T12:30:00Z"},
+    {"name": "FOMC", "utc": "2026-09-16T18:00:00Z"},
+    {"name": "CPI", "utc": "2026-10-14T12:30:00Z"},
+    {"name": "FOMC", "utc": "2026-10-28T18:00:00Z"},
+    {"name": "CPI", "utc": "2026-11-10T13:30:00Z"},
+    {"name": "FOMC", "utc": "2026-12-09T19:00:00Z"},
+    {"name": "CPI", "utc": "2026-12-10T13:30:00Z"},
+    {"name": "FOMC", "utc": "2027-01-27T19:00:00Z"},
+    {"name": "FOMC", "utc": "2027-03-17T18:00:00Z"},
+    {"name": "FOMC", "utc": "2027-04-28T18:00:00Z"},
+    {"name": "FOMC", "utc": "2027-06-09T18:00:00Z"},
+    {"name": "FOMC", "utc": "2027-07-28T18:00:00Z"},
+    {"name": "FOMC", "utc": "2027-09-15T18:00:00Z"},
+    {"name": "FOMC", "utc": "2027-10-27T18:00:00Z"},
+    {"name": "FOMC", "utc": "2027-12-08T19:00:00Z"}
+  ]
+}

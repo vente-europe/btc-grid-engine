@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BTC Grid Decision Engine</title>
+<style>
+  :root { --bg:#f5f7fa; --card:#fff; --ink:#1a2332; --mut:#6b7a90; --line:#e3e8ef;
+          --green:#0f9d58; --red:#d93025; --amber:#e8a100; --blue:#2563eb; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI',system-ui,sans-serif; background:var(--bg); color:var(--ink); padding:18px; }
+  .wrap { max-width:1060px; margin:0 auto; }
+  header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+  h1 { font-size:20px; }
+  .meta { font-size:12px; color:var(--mut); text-align:right; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:820px){ .grid { grid-template-columns:1fr; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.6px; color:var(--mut); margin-bottom:12px; }
+  .big { font-size:34px; font-weight:700; }
+  .action { display:inline-block; padding:6px 16px; border-radius:8px; font-weight:700; font-size:18px; color:#fff; }
+  .action.go { background:var(--green); } .action.wait { background:var(--amber); } .action.no { background:var(--red); }
+  .levels { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
+  .lvl { border:1px solid var(--line); border-radius:10px; padding:10px 14px; }
+  .lvl .lab { font-size:11px; color:var(--mut); text-transform:uppercase; }
+  .lvl .val { font-size:24px; font-weight:700; }
+  .lvl .dist { font-size:13px; color:var(--mut); }
+  .buy .val { color:var(--green); } .sell .val { color:var(--red); }
+  .toggle { display:flex; gap:6px; margin:6px 0 2px; }
+  .toggle button { border:1px solid var(--line); background:#fff; padding:5px 14px; border-radius:8px; cursor:pointer; font-size:13px; }
+  .toggle button.on { background:var(--blue); color:#fff; border-color:var(--blue); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--mut); font-weight:600; font-size:11px; text-transform:uppercase; }
+  td.r, th.r { text-align:right; }
+  .pill { display:inline-block; padding:2px 10px; border-radius:20px; font-size:12px; font-weight:600; }
+  .pill.g { background:#e6f4ea; color:var(--green); } .pill.y { background:#fdf3d7; color:#9a6b00; }
+  .pill.r { background:#fce8e6; color:var(--red); } .pill.b { background:#e8f0fe; color:var(--blue); }
+  .why li { margin:7px 0 7px 18px; font-size:13.5px; }
+  .conf-bar { height:10px; background:var(--line); border-radius:6px; overflow:hidden; margin-top:6px; }
+  .conf-fill { height:100%; border-radius:6px; }
+  #chart { width:100%; height:190px; }
+  .foot { margin-top:14px; font-size:11.5px; color:var(--mut); line-height:1.5; }
+  .err { background:#fce8e6; color:var(--red); padding:12px; border-radius:10px; margin-bottom:14px; display:none; }
+  .refresh { border:none; background:var(--blue); color:#fff; padding:8px 18px; border-radius:8px; cursor:pointer; font-size:14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>🟠 BTC Grid Decision Engine</h1>
+      <div class="toggle" id="horizonT"></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <div class="meta" id="meta">ladowanie...</div>
+      <button class="refresh" onclick="run()">↻ Odśwież</button>
+    </div>
+  </header>
+  <div class="err" id="err"></div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>BTC teraz</h2>
+      <div class="big" id="price">...</div>
+      <div style="margin-top:10px"><span id="action" class="action">...</span></div>
+      <div style="margin-top:12px;font-size:13px;color:var(--mut)">Confidence</div>
+      <div style="font-weight:700;font-size:18px"><span id="confv">...</span>/100</div>
+      <div class="conf-bar"><div class="conf-fill" id="confbar" style="width:0%"></div></div>
+      <div style="margin-top:12px" id="regimePills"></div>
+    </div>
+
+    <div class="card">
+      <h2>Rekomendacja <span id="varLabel"></span></h2>
+      <div class="toggle" id="variantT"></div>
+      <div class="levels">
+        <div class="lvl buy"><div class="lab">BUY</div><div class="val" id="buyV">...</div><div class="dist" id="buyD"></div></div>
+        <div class="lvl sell"><div class="lab">SELL</div><div class="val" id="sellV">...</div><div class="dist" id="sellD"></div></div>
+      </div>
+      <div style="margin-top:10px;font-size:13px" id="mpdLine"></div>
+    </div>
+
+    <div class="card">
+      <h2>Dlaczego taka decyzja</h2>
+      <ul class="why" id="why"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Drabinka (poziomy 1-4)</h2>
+      <table><thead><tr><th>#</th><th class="r">BUY</th><th class="r">SELL</th></tr></thead>
+      <tbody id="ladder"></tbody></table>
+    </div>
+
+    <div class="card" style="grid-column:1/-1">
+      <h2>Cena 24h + poziomy</h2>
+      <canvas id="chart"></canvas>
+    </div>
+
+    <div class="card" style="grid-column:1/-1">
+      <h2>Okna obserwacji (warstwa: dlaczego)</h2>
+      <table><thead><tr><th>Okno</th><th class="r">Oscylacja (0-100)</th><th>Odczyt</th></tr></thead>
+      <tbody id="windows"></tbody></table>
+    </div>
+  </div>
+
+  <div class="foot">
+    Dane live: Bybit spot BTCUSDT (fallback Binance). Tabele percentyli: <span id="calDate"></span>.
+    Percentyl P60 oznacza ~40% szans dotkniecia poziomu w horyzoncie. Narzedzie decyzyjne, nie porada inwestycyjna.
+    Zlecenia skladaj jako Post-Only (fee maker).
+  </div>
+</div>
+
+<script>
+const CAL = /*__CALIBRATION_JSON__*/null;
+
+const $ = id => document.getElementById(id);
+const fmt$ = x => "$" + Math.round(x).toLocaleString("pl-PL");
+let state = { horizon: +(localStorage.getItem("gh")||CAL.config.default_horizon), variant: localStorage.getItem("gv")||"balanced" };
+
+// ---------- data fetch (Bybit -> fallback Binance) ----------
+async function getKlines(interval, limit){
+  try {
+    const r = await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=${interval}&limit=${limit}`);
+    const j = await r.json();
+    if (j.retCode !== 0) throw new Error(j.retMsg);
+    // bybit: newest first [ts,o,h,l,c,vol,turnover]
+    return j.result.list.map(k=>({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]})).reverse();
+  } catch(e) {
+    const map = {"5":"5m","15":"15m"};
+    const r = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${map[interval]}&limit=${limit}`);
+    const j = await r.json();
+    return j.map(k=>({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));
+  }
+}
+
+// ---------- math ----------
+function pctLookup(sortedQ, x){          // kwantyle 0..100 -> percentyl wartosci x
+  let lo=0, hi=100;
+  if (x<=sortedQ[0]) return 0; if (x>=sortedQ[100]) return 100;
+  while (hi-lo>1){ const m=(lo+hi)>>1; (sortedQ[m]<=x)?lo=m:hi=m; }
+  return lo;
+}
+function rv(closes, perHourDiv){          // sqrt(sum r^2 / hours) na 5m closes
+  let s=0; for(let i=1;i<closes.length;i++){ const r=Math.log(closes[i]/closes[i-1]); s+=r*r; }
+  return Math.sqrt(s/perHourDiv);
+}
+function effRatio(closes){                // |net| / droga
+  const net=Math.abs(closes[closes.length-1]-closes[0]);
+  let path=0; for(let i=1;i<closes.length;i++) path+=Math.abs(closes[i]-closes[i-1]);
+  return path>0 ? net/path : 0;
+}
+function olsTrend(hourlyCloses){          // slope log-ceny per h + R2
+  const y=hourlyCloses.map(Math.log), n=y.length;
+  const xm=(n-1)/2; let sxy=0,sxx=0,ym=y.reduce((a,b)=>a+b)/n, sst=0;
+  for(let i=0;i<n;i++){ sxy+=(i-xm)*(y[i]-ym); sxx+=(i-xm)*(i-xm); sst+=(y[i]-ym)**2; }
+  const b=sxy/sxx; let sse=0;
+  for(let i=0;i<n;i++){ const f=ym+b*(i-xm); sse+=(y[i]-f)**2; }
+  return { slope:b, r2: sst>0 ? 1-sse/sst : 0 };
+}
+function regimeOf(p){ return p<25?"quiet":p<75?"normal":p<90?"elevated":"extreme"; }
+
+// ---------- decision ----------
+function decide(k5, k15){
+  const cfg = CAL.config, price = k15[k15.length-1].c;
+  const c5 = k5.map(k=>k.c), c15 = k15.map(k=>k.c);
+
+  const rv4h = rv(c5.slice(-49), 4);
+  const volPct = pctLookup(CAL.baselines.rv4h_quantiles, rv4h);
+  const regime = regimeOf(volPct);
+  const fast = rv(c5.slice(-13), 1), slow = rv(c5.slice(-289), 24);
+  const shock = slow>0 ? fast/slow : 1;
+
+  const osc = {};
+  for (const w of [24,72,168]){
+    const need=w*4;
+    osc[w] = c15.length>need ? 100 - pctLookup(CAL.baselines.er_quantiles[String(w)], effRatio(c15.slice(-need-1))) : null;
+  }
+
+  const hourly=[]; for(let i=c15.length-97;i<c15.length;i+=4) if(i>=0) hourly.push(c15[i]);
+  const tr = olsTrend(hourly);
+  const t4 = CAL.excursion_tables["4"][regime] || CAL.excursion_tables["4"]["all"];
+  const sigma4 = (t4.up["60"]+t4.down["60"])/2;
+  let z = (tr.slope*4)/Math.max(sigma4,1e-6);
+  if (tr.r2 < cfg.trend_r2_gate) z = 0;
+  const trendStr = Math.max(-1, Math.min(1, z/cfg.trend_z_block));
+
+  const hi24=Math.max(...k15.slice(-96).map(k=>k.h)), lo24=Math.min(...k15.slice(-96).map(k=>k.l));
+  const breakout = price>=hi24*0.999 || price<=lo24*1.001;
+
+  const now=Date.now(); let eventHit=null;
+  for(const ev of CAL.events){
+    const t=Date.parse(ev.utc);
+    if (now>=t-cfg.event_window_before_h*3.6e6 && now<=t+cfg.event_window_after_h*3.6e6){ eventHit=ev; break; }
+  }
+
+  const tab = CAL.excursion_tables[String(state.horizon)][regime] || CAL.excursion_tables[String(state.horizon)]["all"];
+  const mpdAbs = price*cfg.mpd_pct;
+  const shift = Math.max(-cfg.trend_shift_max, Math.min(cfg.trend_shift_max, cfg.trend_shift_max*trendStr));
+  const variants = {};
+  for (const [name,tau] of Object.entries(cfg.variants)){
+    let dUp=tab.up[String(tau)]*price, dDn=tab.down[String(tau)]*price;
+    dUp*=(1+shift); dDn*=(1-shift);   // trend w gore: SELL dalej, BUY blizej
+    variants[name]={ buy:price-dDn, sell:price+dUp, dUp, dDn,
+                     ok: Math.min(dUp,dDn) >= cfg.mpd_multiple_min*mpdAbs };
+  }
+
+  const blocks=[], waits=[];
+  if (volPct>cfg.vol_percentile_max) blocks.push("Zmiennosc ekstremalna (percentyl "+Math.round(volPct)+")");
+  if (osc[24]!==null && osc[24]<cfg.oscillation_no_trade) blocks.push("Rynek kierunkowy: oscylacja 24h = "+Math.round(osc[24]));
+  if (Math.abs(z)>=cfg.trend_z_block && tr.r2>0.5) blocks.push("Silny trend (z="+z.toFixed(1)+")");
+  if (!variants.conservative.ok) blocks.push("Nawet Conservative ponizej "+cfg.mpd_multiple_min+"x progu oplacalnosci");
+  if (shock>cfg.shock_ratio_wait) waits.push("Ekspansja zmiennosci: shock ratio "+shock.toFixed(2));
+  if (breakout) waits.push("Swieze wybicie poza zakres 24h");
+  if (eventHit) waits.push("Event: "+eventHit.name+" ("+new Date(Date.parse(eventHit.utc)).toLocaleString("pl-PL")+")");
+  if (osc[72]!==null && osc[72]<cfg.oscillation_wait_3d) waits.push("Okno 3d kierunkowe: oscylacja = "+Math.round(osc[72]));
+
+  const action = blocks.length ? "NO TRADE" : waits.length ? "WAIT" : "START GRID";
+
+  let conf=50;
+  if (!blocks.length && !waits.length && (regime==="normal"||regime==="quiet")) conf+=20;
+  if (shock>=0.7 && shock<=1.3) conf+=10;
+  const v=variants[state.variant];
+  if (v.ok && Math.min(v.dUp,v.dDn)>=2*mpdAbs) conf+=10;
+  if (osc[24]!==null && osc[24]>60) conf+=10;
+  if (regime==="elevated") conf-=20;
+  if (Math.abs(z)>0.75) conf-=15;
+  if (osc[72]!==null && osc[72]<40) conf-=10;
+  conf=Math.max(0,Math.min(95, blocks.length?Math.min(conf,25):conf));
+
+  return { price, regime, volPct, shock, osc, z, r2:tr.r2, trendStr, breakout,
+           variants, mpdAbs, shift, blocks, waits, action, conf, hi24, lo24 };
+}
+
+// ---------- render ----------
+function pill(txt, cls){ return `<span class="pill ${cls}">${txt}</span> `; }
+function render(d, k15){
+  $("price").textContent = fmt$(d.price);
+  const a=$("action");
+  a.textContent=d.action;
+  a.className="action "+(d.action==="START GRID"?"go":d.action==="WAIT"?"wait":"no");
+  $("confv").textContent=d.conf;
+  const cb=$("confbar"); cb.style.width=d.conf+"%";
+  cb.style.background = d.conf>=70?"var(--green)":d.conf>=40?"var(--amber)":"var(--red)";
+
+  const regPL={quiet:"spokojny",normal:"normalny",elevated:"podwyzszony",extreme:"ekstremalny"};
+  const trendTxt = d.z===0?"brak / nieistotny": (d.z>0?"wzrostowy":"spadkowy")+" (z="+d.z.toFixed(1)+")";
+  $("regimePills").innerHTML =
+    pill("Rezim: "+regPL[d.regime]+" ("+Math.round(d.volPct)+")", d.regime==="extreme"?"r":d.regime==="elevated"?"y":"g") +
+    pill("Trend: "+trendTxt, Math.abs(d.z)>1?"y":"b") +
+    pill("Shock: "+d.shock.toFixed(2), d.shock>2?"r":d.shock>1.3?"y":"g");
+
+  const v=d.variants[state.variant];
+  $("buyV").textContent=fmt$(v.buy);  $("buyD").textContent="-"+fmt$(v.dDn)+" od ceny";
+  $("sellV").textContent=fmt$(v.sell); $("sellD").textContent="+"+fmt$(v.dUp)+" od ceny";
+  $("mpdLine").innerHTML = v.ok
+    ? `✅ Spread powyzej ${CAL.config.mpd_multiple_min}x progu oplacalnosci (${fmt$(d.mpdAbs)})`
+    : `⛔ Spread ponizej ${CAL.config.mpd_multiple_min}x progu oplacalnosci (${fmt$(d.mpdAbs)}): fees zjedza zysk`;
+
+  const why=[];
+  d.blocks.forEach(b=>why.push("⛔ "+b));
+  d.waits.forEach(w=>why.push("⏸ "+w));
+  if (d.action==="START GRID"){
+    why.push("✅ Zadna blokada nie odpalila");
+    why.push(`Rezim ${regPL[d.regime]}: typowy ruch ${state.horizon}h wspiera spread ~${fmt$(v.dDn)} / ${fmt$(v.dUp)}`);
+    if (d.shift!==0) why.push(`Trend przesuwa poziomy o ${(d.shift*100).toFixed(0)}% (${d.shift>0?"SELL dalej, BUY blizej":"BUY dalej, SELL blizej"})`);
+  }
+  $("why").innerHTML = why.map(x=>`<li>${x}</li>`).join("");
+
+  $("ladder").innerHTML = CAL.config.ladder_multipliers.map((m,i)=>
+    `<tr><td>${i+1} (x${m})</td><td class="r" style="color:var(--green)">${fmt$(d.price-v.dDn*m)}</td>
+     <td class="r" style="color:var(--red)">${fmt$(d.price+v.dUp*m)}</td></tr>`).join("");
+
+  const oscTxt = s => s===null?"brak danych": s>=60?"faluje (dobrze)": s>=30?"neutralnie":"jedzie kierunkowo (zle)";
+  const oscCls = s => s===null?"b": s>=60?"g": s>=30?"y":"r";
+  $("windows").innerHTML = [[24,"24h"],[72,"3 dni"],[168,"7 dni"]].map(([w,lab])=>
+    `<tr><td>${lab}</td><td class="r">${d.osc[w]===null?"-":Math.round(d.osc[w])}</td>
+     <td>${pill(oscTxt(d.osc[w]), oscCls(d.osc[w]))}</td></tr>`).join("");
+
+  drawChart(k15.slice(-96), d, v);
+  $("meta").innerHTML = `cena z ${new Date().toLocaleTimeString("pl-PL")}<br>venue: Bybit spot`;
+  $("calDate").textContent = CAL.generated_utc.slice(0,16).replace("T"," ")+" UTC";
+}
+
+function drawChart(k, d, v){
+  const cv=$("chart"), ctx=cv.getContext("2d");
+  const W=cv.width=cv.clientWidth*devicePixelRatio, H=cv.height=190*devicePixelRatio;
+  ctx.scale(1,1); ctx.clearRect(0,0,W,H);
+  const prices=k.map(x=>x.c);
+  const lo=Math.min(...prices, v.buy)*0.9995, hi=Math.max(...prices, v.sell)*1.0005;
+  const X=i=>i/(k.length-1)*(W-70*devicePixelRatio)+10, Y=p=>H-14-(p-lo)/(hi-lo)*(H-28);
+  const line=(p,color,label)=>{ ctx.strokeStyle=color; ctx.setLineDash([6,5]); ctx.beginPath();
+    ctx.moveTo(0,Y(p)); ctx.lineTo(W-64*devicePixelRatio,Y(p)); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle=color; ctx.font=`${11*devicePixelRatio}px Segoe UI`;
+    ctx.fillText(label+" "+fmt$(p), W-62*devicePixelRatio, Y(p)+4); };
+  ctx.strokeStyle="#2563eb"; ctx.lineWidth=1.6*devicePixelRatio; ctx.beginPath();
+  prices.forEach((p,i)=>{ i?ctx.lineTo(X(i),Y(p)):ctx.moveTo(X(i),Y(p)); }); ctx.stroke();
+  line(v.buy,"#0f9d58","BUY"); line(v.sell,"#d93025","SELL");
+}
+
+// ---------- toggles ----------
+function buildToggles(){
+  $("horizonT").innerHTML=[1,4,24].map(h=>
+    `<button class="${h===state.horizon?'on':''}" onclick="setH(${h})">${h}h</button>`).join("");
+  const labels={aggressive:"Aggressive",balanced:"Balanced",conservative:"Conservative"};
+  $("variantT").innerHTML=Object.keys(CAL.config.variants).map(vn=>
+    `<button class="${vn===state.variant?'on':''}" onclick="setV('${vn}')">${labels[vn]}</button>`).join("");
+}
+function setH(h){ state.horizon=h; localStorage.setItem("gh",h); run(); }
+function setV(v){ state.variant=v; localStorage.setItem("gv",v); run(); }
+
+// ---------- main ----------
+let cache=null;
+async function run(){
+  buildToggles();
+  try{
+    $("err").style.display="none";
+    if(!cache || Date.now()-cache.t > 30000){
+      const [k5,k15]=await Promise.all([getKlines("5",300), getKlines("15",700)]);
+      cache={k5,k15,t:Date.now()};
+    }
+    render(decide(cache.k5, cache.k15), cache.k15);
+  }catch(e){
+    $("err").textContent="Blad pobierania danych: "+e.message+" (sprawdz internet / sprobuj ponownie)";
+    $("err").style.display="block";
+  }
+}
+run();
+</script>
+</body>
+</html>

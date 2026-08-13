@@ -1,0 +1,21 @@
+# Dane lokalne (setki MB, odtwarzalne skryptami)
+data/
+*.parquet
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# Sekrety (gdyby kiedys doszly klucze API)
+.env
+*.key
+
+# Notatniki: checkpointy
+.ipynb_checkpoints/
+
+# System
+Thumbs.db
+desktop.ini
