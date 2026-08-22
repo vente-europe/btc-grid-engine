@@ -29,6 +29,11 @@
   .toggle { display:flex; gap:6px; margin:6px 0 2px; }
   .toggle button { border:1px solid var(--line); background:#fff; padding:5px 14px; border-radius:8px; cursor:pointer; font-size:13px; }
   .toggle button.on { background:var(--blue); color:#fff; border-color:var(--blue); }
+  .tabs { margin:0 0 14px; }
+  .tabs button { padding:8px 20px; font-size:14px; font-weight:600; }
+  #btChart { width:100%; height:240px; }
+  .mrow { display:flex; justify-content:space-between; gap:10px; font-size:13.5px; padding:5px 0; border-bottom:1px solid var(--line); }
+  tr.best td { background:#e6f4ea; font-weight:700; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
   th,td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
   th { color:var(--mut); font-weight:600; font-size:11px; text-transform:uppercase; }
@@ -64,8 +69,9 @@
     </div>
   </header>
   <div class="err" id="err"></div>
+  <div class="toggle tabs" id="tabsT"></div>
 
-  <div class="grid">
+  <div class="grid" id="tabGrid">
     <div class="card">
       <h2>BTC teraz</h2>
       <div style="display:flex;gap:14px;align-items:stretch">
@@ -148,10 +154,78 @@
     </div>
   </div>
 
+  <div class="grid" id="tabBt" style="display:none">
+    <div class="card" style="grid-column:1/-1">
+      <h2>Parametry backtestu</h2>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px">
+        <label for="btCap">Kapitał startowy:</label>
+        <input id="btCap" type="number" min="100" step="1000" style="width:110px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:14px" onchange="setBtCap(this.value)">
+        <span>USDT</span>
+        <label for="btCash" style="margin-left:12px">Docelowy udział USDC:</label>
+        <input id="btCash" type="number" min="1" max="99" step="1" style="width:64px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:14px" onchange="setBtCash(this.value)">
+        <span>%</span>
+        <label for="btFee" style="margin-left:12px">Prowizja:</label>
+        <input id="btFee" type="number" min="0" max="1" step="0.005" style="width:72px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:14px" onchange="setBtFee(this.value)">
+        <span>% na stronę</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;margin-top:10px">
+        <span>Próg reakcji (odchylenie udziału):</span>
+        <div class="toggle" style="margin:0" id="btThrT"></div>
+        <input id="btThr" type="number" min="0.05" step="0.25" style="width:70px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px" onchange="setBtThr(this.value)">
+        <span>pkt proc.</span>
+        <span style="margin-left:14px">Interwał decyzji:</span>
+        <div class="toggle" style="margin:0" id="btTfT"></div>
+        <span style="margin-left:14px">Okres:</span>
+        <div class="toggle" style="margin:0" id="btPerT"></div>
+      </div>
+      <div style="margin-top:10px;font-size:12.5px;color:var(--mut)" id="btProg"></div>
+    </div>
+
+    <div class="card">
+      <h2>Wyniki</h2>
+      <div id="btMetrics" style="color:var(--mut);font-size:13px">Czekam na dane...</div>
+    </div>
+
+    <div class="card">
+      <h2>Jak działa rebalans <span class="qi" onclick="document.getElementById('btHelp').classList.toggle('show')">?</span></h2>
+      <div style="font-size:12.5px;line-height:1.6">
+        Portfel trzyma BTC + USDC w stałej proporcji (np. 80/20). Cena rośnie: udział USDC spada poniżej celu, sprzedajesz trochę BTC.
+        Cena spada: udział USDC rośnie, dokupujesz BTC. Zysk bierze się z falowania ceny, nie z kierunku.
+        Symulacja sprawdza udział na <b>zamknięciu każdej świecy</b> i handluje po cenie zamknięcia, z prowizją od obrotu.
+      </div>
+      <div id="btHelp" class="help-pop">
+        <b>Udział a cena to to samo pasmo, w innych jednostkach</b><br>
+        Po ruchu ceny o czynnik r udział USDC = c / ((1-c)·r + c), gdzie c = cel (0,20).<br><br>
+        Przykład: portfel $100 000 (BTC $80 000 + USDC $20 000), BTC po $100 000.<br>
+        Cena rośnie do $102 000 (+2%): udział USDC spada do <b>19,69%</b>. Rebalans sprzedałby BTC za ok. <b>$320</b>.<br>
+        Przy paśmie ±1 pkt proc. nic się jeszcze nie dzieje: udział dotknie 19% dopiero przy <b>$106 579</b> (+6,6%, SELL),
+        a 21% przy <b>$94 048</b> (-6,0%, BUY). Symetryczne pasmo udziału = niesymetryczne pasmo cenowe.<br><br>
+        Prowizja wyznacza dolną granicę sensownej szerokości pasma: zbyt ciasne pasmo to dużo małych transakcji, które zjadają zysk
+        (zobacz tabelę progów na dole).<br><br>
+        <span style="color:var(--mut)">Początkowy zakup BTC bez prowizji, tak samo w strategii i w benchmarkach, żeby porównanie było uczciwe.
+        Zlecenia poniżej $10 są pomijane (minimum giełdy).</span>
+      </div>
+    </div>
+
+    <div class="card" style="grid-column:1/-1">
+      <h2>Krzywa kapitału</h2>
+      <div id="btLegend" style="font-size:11.5px;color:var(--mut);margin-bottom:8px"></div>
+      <canvas id="btChart"></canvas>
+    </div>
+
+    <div class="card" style="grid-column:1/-1">
+      <h2>Przegląd progów (ten sam interwał i okres)</h2>
+      <table><thead><tr><th>Próg</th><th class="r">Transakcje</th><th class="r">Prowizje</th><th class="r">Wynik netto</th><th class="r">vs HODL</th><th class="r">vs 80/20 bez rebalansu</th><th class="r">Max obsunięcie</th></tr></thead>
+      <tbody id="btSweep"></tbody></table>
+      <div style="margin-top:8px;font-size:12px;color:var(--mut)">Kliknij wiersz, aby ustawić ten próg w symulacji powyżej.</div>
+    </div>
+  </div>
+
   <div class="foot">
     Dane live: Bybit spot BTCUSDT (fallback Binance). Tabele percentyli: <span id="calDate"></span>.
     Percentyl P60 oznacza ~40% szans dotkniecia poziomu w horyzoncie. Narzedzie decyzyjne, nie porada inwestycyjna.
     Zlecenia skladaj jako Post-Only (fee maker).
+    Backtest rebalansu: historia Binance 1h (fallback Bybit), egzekucja na zamknieciu swiecy, wynik informacyjny.
   </div>
 </div>
 
@@ -171,6 +245,34 @@ function setMode(m){ state.mode=m; localStorage.setItem("gm",m); run(); }
 function setStep(v){ state.step=Math.max(10,+v||100); localStorage.setItem("gs",state.step); run(); }
 function setLvls(v){ state.levels=Math.min(100,Math.max(2,+v||30)); localStorage.setItem("gl",state.levels); run(); }
 
+// ---------- zakladki + stan backtestu rebalansu ----------
+state.tab = localStorage.getItem("gt")||"grid";
+let bt = { cap:  +(localStorage.getItem("bt_cap") ||100000),
+           cash: +(localStorage.getItem("bt_cash")||20),      // docelowy udzial USDC w %
+           thr:  +(localStorage.getItem("bt_thr") ||1),       // pasmo w pkt proc.
+           tf:   +(localStorage.getItem("bt_tf")  ||1),       // interwal decyzji w godzinach: 1/4/24
+           per:  +(localStorage.getItem("bt_per") ||730),     // okres w dniach: 183/365/730
+           fee:  +(localStorage.getItem("bt_fee") ||state.fee) };
+function buildTabs(){
+  $("tabsT").innerHTML =
+    `<button class="${state.tab==='grid'?'on':''}" onclick="setTab('grid')">Silnik grid</button>`+
+    `<button class="${state.tab==='bt'?'on':''}" onclick="setTab('bt')">Backtest rebalansu</button>`;
+}
+function setTab(t){
+  state.tab=t; localStorage.setItem("gt",t);
+  $("tabGrid").style.display = t==="grid"?"grid":"none";
+  $("tabBt").style.display   = t==="bt"  ?"grid":"none";
+  buildTabs();
+  if (t==="bt") runBacktest();
+  else run();   // przerysowanie wykresu tab 1 (canvas ukryty mial szerokosc 0)
+}
+function setBtCap(v){ bt.cap=Math.max(100,+v||100000); localStorage.setItem("bt_cap",bt.cap); runBacktest(); }
+function setBtCash(v){ bt.cash=Math.min(99,Math.max(1,+v||20)); localStorage.setItem("bt_cash",bt.cash); runBacktest(); }
+function setBtThr(v){ bt.thr=Math.max(0.05,+v||1); localStorage.setItem("bt_thr",bt.thr); runBacktest(); }
+function setBtTf(v){ bt.tf=v; localStorage.setItem("bt_tf",v); runBacktest(); }
+function setBtPer(v){ bt.per=v; localStorage.setItem("bt_per",v); runBacktest(); }
+function setBtFee(v){ bt.fee=Math.min(1,Math.max(0,+v||0.10)); localStorage.setItem("bt_fee",bt.fee); runBacktest(); }
+
 // ---------- data fetch (Bybit -> fallback Binance) ----------
 async function getKlines(interval, limit){
   try {
@@ -185,6 +287,47 @@ async function getKlines(interval, limit){
     const j = await r.json();
     return j.map(k=>({t:+k[0],o:+k[1],h:+k[2],l:+k[3],c:+k[4]}));
   }
+}
+
+// Historia 1h do backtestu. Binance jako pierwszy (paginacja startTime w przod jest najprostsza,
+// limit 1000/strone), fallback Bybit V5 (paginacja wstecz przez end, strony od najnowszych).
+// Zwraca [{t,c}] od najstarszej, tylko domkniete swiece. t = czas otwarcia swiecy.
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+async function getKlinesRange(startMs, onProgress){
+  const iv=3600000, endMs=Date.now(), est=Math.ceil((endMs-startMs)/iv);
+  let out=[];
+  try{
+    let cur=startMs;
+    while(cur<endMs){
+      const r=await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime=${cur}&limit=1000`);
+      if(!r.ok) throw new Error("Binance HTTP "+r.status);
+      const j=await r.json();
+      if(!Array.isArray(j)||!j.length) break;
+      for(const k of j){ const t=+k[0]; if(!out.length||t>out[out.length-1].t) out.push({t,c:+k[4]}); }
+      cur=out[out.length-1].t+iv;
+      if(onProgress) onProgress(out.length,est);
+      if(j.length<1000) break;
+      await sleep(120);
+    }
+  }catch(e){
+    out=[]; let end=endMs;
+    while(end>startMs){
+      const r=await fetch(`https://api.bybit.com/v5/market/kline?category=spot&symbol=BTCUSDT&interval=60&end=${end}&limit=1000`);
+      const j=await r.json();
+      if(j.retCode!==0) throw new Error(j.retMsg);
+      const page=j.result.list.map(k=>({t:+k[0],c:+k[4]})).reverse();
+      const older=page.filter(b=>!out.length||b.t<out[0].t);
+      if(!older.length) break;
+      out=older.concat(out);
+      end=out[0].t-1;
+      if(onProgress) onProgress(out.length,est);
+      await sleep(120);
+    }
+    out=out.filter(b=>b.t>=startMs);
+  }
+  while(out.length && out[out.length-1].t+iv>Date.now()) out.pop();   // odetnij niedomknieta swiece
+  if(out.length<2) throw new Error("brak danych historycznych");
+  return out;
 }
 
 // ---------- math ----------
@@ -502,6 +645,153 @@ function drawChart(k, d, v, fmt, band){
   ctx.textAlign="left";
 }
 
+// ---------- backtest rebalansu 80/20 ----------
+// Downsampling 1h -> Nh: zostaje OSTATNIA swieca 1h kazdego kubelka N-godzinnego (kubelek po czasie
+// zamkniecia, arytmetyka epoch/UTC). Zamkniecie swiecy 4h 00-04 UTC = zamkniecie swiecy 1h otwartej o 03.
+function downsample(bars1h, nHours){
+  if(nHours===1) return bars1h;
+  const W=nHours*3600000, m=new Map();
+  for(const b of bars1h) m.set(Math.floor((b.t+3600000-1)/W), b);
+  return [...m.values()].sort((a,b)=>a.t-b.t);
+}
+
+// Symulacja constant-mix: cel udzialu USDC ct, pasmo bandPp pkt proc., decyzja i egzekucja na close.
+// Rebalans przywraca DOKLADNIE cel po prowizji: SELL S=(ct*V-cash)/(1-f+ct*f), BUY S=(cash-ct*V)/(1-ct*f)
+// (S = obrot w USD, f = prowizja; wyprowadzenie: cash' = ct*V' przy V' = V - f*S).
+function simRebalance(bars, o){
+  const ct=o.cashTarget, f=o.feePct/100, C=o.capital, band=o.bandPp/100, minT=o.minTradeUsd||10;
+  const p0=bars[0].c, pEnd=bars[bars.length-1].c;
+  let cash=C*ct, btc=C*(1-ct)/p0, fees=0, buys=0, sells=0, peak=C, maxDd=0, bhPeak=C, bhMaxDd=0;
+  const btcBH=C/p0, btcNR=C*(1-ct)/p0, cashNR=C*ct;   // benchmarki: HODL 100% BTC i 80/20 bez rebalansu
+  const eq=[{t:bars[0].t, v:C, bh:C}], ev=[];
+  for(let i=1;i<bars.length;i++){
+    const p=bars[i].c;
+    let V=btc*p+cash;
+    if (Math.abs(cash/V-ct)>=band){
+      let S=0, side=null;
+      if (cash<ct*V){ S=(ct*V-cash)/(1-f+ct*f);
+        if(S>=minT){ btc-=S/p; cash+=S*(1-f); side="SELL"; sells++; } }
+      else { S=(cash-ct*V)/(1-ct*f);
+        if(S>=minT){ cash-=S; btc+=S*(1-f)/p; side="BUY"; buys++; } }
+      if(side){ fees+=f*S; ev.push({t:bars[i].t,p,side,notional:S}); V=btc*p+cash; }
+    }
+    peak=Math.max(peak,V); maxDd=Math.max(maxDd,1-V/peak);
+    const bhV=btcBH*p; bhPeak=Math.max(bhPeak,bhV); bhMaxDd=Math.max(bhMaxDd,1-bhV/bhPeak);
+    eq.push({t:bars[i].t, v:V, bh:bhV});
+  }
+  const finalV=btc*pEnd+cash, nrFinal=btcNR*pEnd+cashNR;
+  return { finalValue:finalV, retPct:100*(finalV/C-1),
+           bhFinal:btcBH*pEnd, bhRetPct:100*(pEnd/p0-1), bhMaxDdPct:100*bhMaxDd,
+           nrFinal, nrRetPct:100*(nrFinal/C-1),
+           trades:buys+sells, buys, sells, feesUsd:fees, maxDdPct:100*maxDd,
+           btcEnd:finalV/pEnd, btcRetPct:100*((finalV/pEnd)/(C/p0)-1),
+           equity:eq, events:ev };
+}
+
+function drawEquityChart(res){
+  const eq=res.equity, cv=$("btChart"), ctx=cv.getContext("2d"), dpr=devicePixelRatio;
+  const W=cv.width=cv.clientWidth*dpr, H=cv.height=240*dpr;
+  ctx.clearRect(0,0,W,H);
+  const padB=22*dpr, padR=84*dpr;
+  let lo=Infinity, hi=-Infinity;
+  for(const e of eq){ lo=Math.min(lo,e.v,e.bh); hi=Math.max(hi,e.v,e.bh); }
+  lo*=0.99; hi*=1.01;
+  const X=i=>i/(eq.length-1)*(W-padR)+4, Y=v=>H-padB-(v-lo)/(hi-lo)*(H-padB-10*dpr);
+  ctx.font=`${10.5*dpr}px Segoe UI`;
+  for(let g=0;g<=3;g++){ const v=lo+(hi-lo)*g/3;
+    ctx.strokeStyle="#e3e8ef"; ctx.beginPath(); ctx.moveTo(0,Y(v)); ctx.lineTo(W-padR,Y(v)); ctx.stroke();
+    ctx.fillStyle="#6b7a90"; ctx.fillText(fmt$(v), W-padR+6*dpr, Y(v)+4); }
+  ctx.strokeStyle="#9aa8bd"; ctx.lineWidth=1.1*dpr; ctx.beginPath();
+  eq.forEach((e,i)=>{ i?ctx.lineTo(X(i),Y(e.bh)):ctx.moveTo(X(i),Y(e.bh)); }); ctx.stroke();
+  ctx.strokeStyle="#2563eb"; ctx.lineWidth=1.7*dpr; ctx.beginPath();
+  eq.forEach((e,i)=>{ i?ctx.lineTo(X(i),Y(e.v)):ctx.moveTo(X(i),Y(e.v)); }); ctx.stroke();
+  if(res.events.length<=300){   // markery transakcji tylko gdy nie zasmieca wykresu
+    const idxByT=new Map(); eq.forEach((e,i)=>idxByT.set(e.t,i));
+    for(const t of res.events){ const i=idxByT.get(t.t); if(i==null) continue;
+      ctx.fillStyle = t.side==="BUY" ? "#0f9d58" : "#d93025";
+      ctx.beginPath(); ctx.arc(X(i),Y(eq[i].v),2.4*dpr,0,7); ctx.fill(); }
+  }
+  ctx.fillStyle="#6b7a90"; ctx.textAlign="center";
+  for(let j=0;j<5;j++){ const i=Math.round(j*(eq.length-1)/4);
+    ctx.fillText(new Date(eq[i].t).toLocaleDateString("pl-PL",{day:"2-digit",month:"2-digit",year:"2-digit"}),
+      Math.min(Math.max(X(i),30*dpr),W-padR-10*dpr), H-6); }
+  ctx.textAlign="left";
+}
+
+let btData=null, btFetching=false;
+function syncBtInputs(){ $("btCap").value=bt.cap; $("btCash").value=bt.cash; $("btThr").value=bt.thr; $("btFee").value=bt.fee; }
+function buildBtToggles(){
+  $("btThrT").innerHTML=[0.5,1,2,3].map(x=>
+    `<button class="${x===bt.thr?'on':''}" onclick="setBtThr(${x})">±${x}</button>`).join("");
+  $("btTfT").innerHTML=[[1,"1h"],[4,"4h"],[24,"1d"]].map(([h,l])=>
+    `<button class="${h===bt.tf?'on':''}" onclick="setBtTf(${h})">${l}</button>`).join("");
+  $("btPerT").innerHTML=[[183,"6 mies."],[365,"1 rok"],[730,"2 lata"]].map(([d,l])=>
+    `<button class="${d===bt.per?'on':''}" onclick="setBtPer(${d})">${l}</button>`).join("");
+}
+async function runBacktest(){
+  if (state.tab!=="bt") return;
+  syncBtInputs(); buildBtToggles();
+  try{
+    $("err").style.display="none";
+    const startMs = Date.now() - bt.per*86400000;
+    if (!btData || btData.startMs > startMs + 86400000){   // brak danych albo za krotki zasieg -> pobierz
+      if (btFetching) return;                              // trwajacy fetch sam wyrenderuje po zakonczeniu
+      btFetching=true;
+      try{
+        $("btProg").textContent="Pobieranie historii 1h...";
+        const bars = await getKlinesRange(startMs, (got,est)=>{
+          $("btProg").textContent=`Pobieranie historii 1h: ${got.toLocaleString("pl-PL")} / ~${est.toLocaleString("pl-PL")} swiec...`; });
+        btData={bars, startMs};
+      } finally { btFetching=false; }
+    }
+    renderBacktest();
+  }catch(e){
+    $("btProg").textContent="";
+    $("err").textContent="Blad pobierania historii: "+e.message+" (sprawdz internet / sprobuj ponownie)";
+    $("err").style.display="block";
+  }
+}
+function renderBacktest(){
+  const startMs = Date.now() - bt.per*86400000;
+  const bars = downsample(btData.bars.filter(b=>b.t>=startMs), bt.tf);
+  if (bars.length<2){ $("btProg").textContent="Za malo danych dla wybranego okresu"; return; }
+  const pct = x => (x>=0?"+":"")+x.toFixed(2)+"%";
+  const opts = { cashTarget:bt.cash/100, bandPp:bt.thr, feePct:bt.fee, capital:bt.cap, minTradeUsd:10 };
+  const res = simRebalance(bars, opts);
+
+  const rows=[
+    ["Wartosc koncowa", `${fmt$(res.finalValue)} (${pct(res.retPct)})`],
+    ["HODL 100% BTC", `${fmt$(res.bhFinal)} (${pct(res.bhRetPct)})`],
+    [`${100-bt.cash}/${bt.cash} bez rebalansu`, `${fmt$(res.nrFinal)} (${pct(res.nrRetPct)})`],
+    ["Przewaga vs bez rebalansu", `${res.finalValue-res.nrFinal>=0?"+":"-"}${fmt$(Math.abs(res.finalValue-res.nrFinal))}`],
+    ["Transakcje", `${res.trades} (BUY ${res.buys} / SELL ${res.sells})`],
+    ["Suma prowizji", fmt$(res.feesUsd)],
+    ["Max obsuniecie", `${res.maxDdPct.toFixed(1)}% (HODL: ${res.bhMaxDdPct.toFixed(1)}%)`],
+    ["Wynik w BTC", `${res.btcEnd.toFixed(5)} BTC (${pct(res.btcRetPct)} vs czyste BTC)`]
+  ];
+  $("btMetrics").innerHTML = rows.map(r=>
+    `<div class="mrow"><span style="color:var(--mut)">${r[0]}</span><b>${r[1]}</b></div>`).join("");
+
+  const sw = c => `<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${c};vertical-align:-1px;margin-right:3px"></span>`;
+  $("btLegend").innerHTML = sw("#2563eb")+"Strategia rebalansu &nbsp; "+sw("#9aa8bd")+"HODL 100% BTC &nbsp; "
+    +sw("#0f9d58")+"BUY &nbsp; "+sw("#d93025")+"SELL";
+  drawEquityChart(res);
+
+  const grid=[0.25,0.5,0.75,1,1.5,2,3,4,5,7.5,10];
+  const sweep=grid.map(g=>({g, r:simRebalance(bars,{...opts,bandPp:g})}));
+  let bi=0; sweep.forEach((s,i)=>{ if(s.r.retPct>sweep[bi].r.retPct) bi=i; });
+  $("btSweep").innerHTML = sweep.map((s,i)=>
+    `<tr class="${i===bi?'best':''}" style="cursor:pointer" onclick="setBtThr(${s.g})">
+     <td>±${s.g} pp</td><td class="r">${s.r.trades}</td><td class="r">${fmt$(s.r.feesUsd)}</td>
+     <td class="r">${pct(s.r.retPct)}</td><td class="r">${pct(s.r.retPct-s.r.bhRetPct)}</td>
+     <td class="r">${pct(s.r.retPct-s.r.nrRetPct)}</td><td class="r">${s.r.maxDdPct.toFixed(1)}%</td></tr>`).join("");
+
+  const tfL={1:"1h",4:"4h",24:"1d"}[bt.tf];
+  $("btProg").textContent = `Dane: ${bars.length.toLocaleString("pl-PL")} swiec ${tfL}, `+
+    `od ${new Date(bars[0].t).toLocaleDateString("pl-PL")} do ${new Date(bars[bars.length-1].t).toLocaleDateString("pl-PL")}, `+
+    `zrodlo: Binance 1h (fallback Bybit), egzekucja na zamknieciu swiecy`;
+}
+
 // ---------- toggles ----------
 function buildToggles(){
   $("horizonT").innerHTML=[1,4,24].map(h=>
@@ -529,6 +819,8 @@ async function run(){
     $("err").style.display="block";
   }
 }
+buildTabs();
+if (state.tab==="bt") setTab("bt");
 run();
 </script>
 </body>
