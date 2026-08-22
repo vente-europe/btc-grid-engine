@@ -31,7 +31,7 @@
   .toggle button.on { background:var(--blue); color:#fff; border-color:var(--blue); }
   .tabs { margin:0 0 14px; }
   .tabs button { padding:8px 20px; font-size:14px; font-weight:600; }
-  #btChart { width:100%; height:240px; }
+  #btChart { width:100%; height:340px; }
   .mrow { display:flex; justify-content:space-between; gap:10px; font-size:13.5px; padding:5px 0; border-bottom:1px solid var(--line); }
   tr.best td { background:#e6f4ea; font-weight:700; }
   table { width:100%; border-collapse:collapse; font-size:13px; }
@@ -208,7 +208,7 @@
     </div>
 
     <div class="card" style="grid-column:1/-1">
-      <h2>Krzywa kapitału</h2>
+      <h2>Cena BTC i wartość portfela</h2>
       <div id="btLegend" style="font-size:11.5px;color:var(--mut);margin-bottom:8px"></div>
       <canvas id="btChart"></canvas>
     </div>
@@ -663,7 +663,7 @@ function simRebalance(bars, o){
   const p0=bars[0].c, pEnd=bars[bars.length-1].c;
   let cash=C*ct, btc=C*(1-ct)/p0, fees=0, buys=0, sells=0, peak=C, maxDd=0, bhPeak=C, bhMaxDd=0;
   const btcBH=C/p0, btcNR=C*(1-ct)/p0, cashNR=C*ct;   // benchmarki: HODL 100% BTC i 80/20 bez rebalansu
-  const eq=[{t:bars[0].t, v:C, bh:C}], ev=[];
+  const eq=[{t:bars[0].t, v:C, bh:C, p:p0}], ev=[];
   for(let i=1;i<bars.length;i++){
     const p=bars[i].c;
     let V=btc*p+cash;
@@ -677,7 +677,7 @@ function simRebalance(bars, o){
     }
     peak=Math.max(peak,V); maxDd=Math.max(maxDd,1-V/peak);
     const bhV=btcBH*p; bhPeak=Math.max(bhPeak,bhV); bhMaxDd=Math.max(bhMaxDd,1-bhV/bhPeak);
-    eq.push({t:bars[i].t, v:V, bh:bhV});
+    eq.push({t:bars[i].t, v:V, bh:bhV, p});
   }
   const finalV=btc*pEnd+cash, nrFinal=btcNR*pEnd+cashNR;
   return { finalValue:finalV, retPct:100*(finalV/C-1),
@@ -688,33 +688,56 @@ function simRebalance(bars, o){
            equity:eq, events:ev };
 }
 
+// Dwa panele na wspolnej osi czasu: gora = cena BTC + punkty transakcji (intuicja: kupuj dolki,
+// sprzedawaj gorki), dol = wartosc portfela strategii vs HODL 100% BTC.
 function drawEquityChart(res){
   const eq=res.equity, cv=$("btChart"), ctx=cv.getContext("2d"), dpr=devicePixelRatio;
-  const W=cv.width=cv.clientWidth*dpr, H=cv.height=240*dpr;
+  const W=cv.width=cv.clientWidth*dpr, H=cv.height=340*dpr;
   ctx.clearRect(0,0,W,H);
-  const padB=22*dpr, padR=84*dpr;
-  let lo=Infinity, hi=-Infinity;
-  for(const e of eq){ lo=Math.min(lo,e.v,e.bh); hi=Math.max(hi,e.v,e.bh); }
-  lo*=0.99; hi*=1.01;
-  const X=i=>i/(eq.length-1)*(W-padR)+4, Y=v=>H-padB-(v-lo)/(hi-lo)*(H-padB-10*dpr);
+  const padR=84*dpr, padB=20*dpr, n=eq.length;
+  const X=i=>i/(n-1)*(W-padR)+4;
+  const topY0=16*dpr, topY1=(H-padB)*0.50, botY0=topY1+28*dpr, botY1=H-padB-4*dpr;
+  const mkY=(lo,hi,y0,y1)=>v=>y1-(v-lo)/(hi-lo)*(y1-y0);
+  const gridline=(y,label)=>{ ctx.strokeStyle="#e3e8ef"; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W-padR,y); ctx.stroke();
+    ctx.fillStyle="#6b7a90"; ctx.fillText(label, W-padR+6*dpr, y+4); };
+
+  // panel gorny: cena BTC + transakcje
+  let pLo=Infinity, pHi=-Infinity;
+  for(const e of eq){ pLo=Math.min(pLo,e.p); pHi=Math.max(pHi,e.p); }
+  pLo*=0.99; pHi*=1.01;
+  const Yp=mkY(pLo,pHi,topY0,topY1);
   ctx.font=`${10.5*dpr}px Segoe UI`;
-  for(let g=0;g<=3;g++){ const v=lo+(hi-lo)*g/3;
-    ctx.strokeStyle="#e3e8ef"; ctx.beginPath(); ctx.moveTo(0,Y(v)); ctx.lineTo(W-padR,Y(v)); ctx.stroke();
-    ctx.fillStyle="#6b7a90"; ctx.fillText(fmt$(v), W-padR+6*dpr, Y(v)+4); }
-  ctx.strokeStyle="#9aa8bd"; ctx.lineWidth=1.1*dpr; ctx.beginPath();
-  eq.forEach((e,i)=>{ i?ctx.lineTo(X(i),Y(e.bh)):ctx.moveTo(X(i),Y(e.bh)); }); ctx.stroke();
-  ctx.strokeStyle="#2563eb"; ctx.lineWidth=1.7*dpr; ctx.beginPath();
-  eq.forEach((e,i)=>{ i?ctx.lineTo(X(i),Y(e.v)):ctx.moveTo(X(i),Y(e.v)); }); ctx.stroke();
-  if(res.events.length<=300){   // markery transakcji tylko gdy nie zasmieca wykresu
+  for(let g=0;g<=2;g++){ const v=pLo+(pHi-pLo)*g/2; gridline(Yp(v), fmt$(v)); }
+  ctx.strokeStyle="#e8a100"; ctx.lineWidth=1.4*dpr; ctx.beginPath();
+  eq.forEach((e,i)=>{ i?ctx.lineTo(X(i),Yp(e.p)):ctx.moveTo(X(i),Yp(e.p)); }); ctx.stroke();
+  if(res.events.length<=400){   // markery tylko gdy nie zasmieca wykresu
     const idxByT=new Map(); eq.forEach((e,i)=>idxByT.set(e.t,i));
     for(const t of res.events){ const i=idxByT.get(t.t); if(i==null) continue;
       ctx.fillStyle = t.side==="BUY" ? "#0f9d58" : "#d93025";
-      ctx.beginPath(); ctx.arc(X(i),Y(eq[i].v),2.4*dpr,0,7); ctx.fill(); }
+      ctx.beginPath(); ctx.arc(X(i),Yp(t.p),2.6*dpr,0,7); ctx.fill(); }
   }
-  ctx.fillStyle="#6b7a90"; ctx.textAlign="center";
-  for(let j=0;j<5;j++){ const i=Math.round(j*(eq.length-1)/4);
+  ctx.fillStyle="#6b7a90"; ctx.font=`bold ${10.5*dpr}px Segoe UI`;
+  ctx.fillText("Cena BTC + transakcje", 6*dpr, topY0-4*dpr);
+
+  // panel dolny: wartosc portfela vs HODL
+  let lo=Infinity, hi=-Infinity;
+  for(const e of eq){ lo=Math.min(lo,e.v,e.bh); hi=Math.max(hi,e.v,e.bh); }
+  lo*=0.99; hi*=1.01;
+  const Yv=mkY(lo,hi,botY0,botY1);
+  ctx.font=`${10.5*dpr}px Segoe UI`;
+  for(let g=0;g<=2;g++){ const v=lo+(hi-lo)*g/2; gridline(Yv(v), fmt$(v)); }
+  ctx.strokeStyle="#9aa8bd"; ctx.lineWidth=1.1*dpr; ctx.beginPath();
+  eq.forEach((e,i)=>{ i?ctx.lineTo(X(i),Yv(e.bh)):ctx.moveTo(X(i),Yv(e.bh)); }); ctx.stroke();
+  ctx.strokeStyle="#2563eb"; ctx.lineWidth=1.7*dpr; ctx.beginPath();
+  eq.forEach((e,i)=>{ i?ctx.lineTo(X(i),Yv(e.v)):ctx.moveTo(X(i),Yv(e.v)); }); ctx.stroke();
+  ctx.fillStyle="#6b7a90"; ctx.font=`bold ${10.5*dpr}px Segoe UI`;
+  ctx.fillText("Wartosc portfela (USDT)", 6*dpr, botY0-6*dpr);
+
+  // wspolna os czasu
+  ctx.fillStyle="#6b7a90"; ctx.font=`${10.5*dpr}px Segoe UI`; ctx.textAlign="center";
+  for(let j=0;j<5;j++){ const i=Math.round(j*(n-1)/4);
     ctx.fillText(new Date(eq[i].t).toLocaleDateString("pl-PL",{day:"2-digit",month:"2-digit",year:"2-digit"}),
-      Math.min(Math.max(X(i),30*dpr),W-padR-10*dpr), H-6); }
+      Math.min(Math.max(X(i),30*dpr),W-padR-10*dpr), H-4); }
   ctx.textAlign="left";
 }
 
@@ -773,8 +796,8 @@ function renderBacktest(){
     `<div class="mrow"><span style="color:var(--mut)">${r[0]}</span><b>${r[1]}</b></div>`).join("");
 
   const sw = c => `<span style="display:inline-block;width:11px;height:11px;border-radius:3px;background:${c};vertical-align:-1px;margin-right:3px"></span>`;
-  $("btLegend").innerHTML = sw("#2563eb")+"Strategia rebalansu &nbsp; "+sw("#9aa8bd")+"HODL 100% BTC &nbsp; "
-    +sw("#0f9d58")+"BUY &nbsp; "+sw("#d93025")+"SELL";
+  $("btLegend").innerHTML = sw("#e8a100")+"Cena BTC &nbsp; "+sw("#0f9d58")+"BUY &nbsp; "+sw("#d93025")+"SELL &nbsp;|&nbsp; "
+    +sw("#2563eb")+"Strategia rebalansu &nbsp; "+sw("#9aa8bd")+"HODL 100% BTC";
   drawEquityChart(res);
 
   const grid=[0.25,0.5,0.75,1,1.5,2,3,4,5,7.5,10];
